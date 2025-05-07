@@ -1,239 +1,346 @@
 document.addEventListener('DOMContentLoaded', () => {
     console.log('DOM fully loaded and parsed.');
 
-    let allCompanyData = []; // Variable to store all parsed company data
-    let currentChart = null; // Variable to hold the current chart instance
+    let allCompanyData = [];
+    let currentChart = null;
+    let currentSelectedIndexName = null;
+    let currentSelectedMetric = 'closing_index_value'; // Default metric
 
     // DOM Element References
     const companyListElement = document.getElementById('companyList');
     const chartTitleElement = document.getElementById('chartTitle');
-    const stockChartCanvas = document.getElementById('stockChart'); // Get the canvas element
+    const stockChartCanvas = document.getElementById('stockChart');
     const noDataMessageElement = document.getElementById('noDataMessage');
+    const searchIndexInputElement = document.getElementById('searchIndexInput');
+    const startDateInput = document.getElementById('startDate');
+    const endDateInput = document.getElementById('endDate');
+    const metricSelectElement = document.getElementById('metricSelect'); // <<< ADDED: Metric Select
+    const applyDateFilterBtn = document.getElementById('applyDateFilterBtn');
+    const clearDateFilterBtn = document.getElementById('clearDateFilterBtn');
+    const resetZoomBtn = document.getElementById('resetZoomBtn'); // <<< ADDED: Reset Zoom Button
+    const availableDateRangeInfoElement = document.getElementById('availableDateRangeInfo');
 
-    /**
-     * Displays a chart for the selected company.
-     * @param {string} companyName - The name of the company to display the chart for.
-     */
-    function displayChartForCompany(companyName) {
-        console.log(`Attempting to display chart for: ${companyName}`);
-        chartTitleElement.textContent = `Stock Data for ${companyName}`; // Update chart title
+    // --- Helper Functions for Date Handling ---
+    function parseDMYtoDate(dateString) {
+         if (!dateString || typeof dateString !== 'string') return null;
+         const parts = dateString.match(/^(\d{1,2})-(\d{1,2})-(\d{4})$/);
+         if (parts) {
+             const day = parseInt(parts[1], 10);
+             const month = parseInt(parts[2], 10) - 1;
+             const year = parseInt(parts[3], 10);
+              if (!isNaN(day) && !isNaN(month) && !isNaN(year) && month >=0 && month <=11 && day >=1 && day <=31) {
+                 let d = new Date(Date.UTC(year, month, day)); // Use UTC to avoid timezone issues in parsing
+                 if (d.getUTCFullYear() === year && d.getUTCMonth() === month && d.getUTCDate() === day) {
+                     return d;
+                 }
+             }
+         }
+         const d = new Date(dateString); // Fallback for YYYY-MM-DD etc.
+         if (!isNaN(d.getTime())) return d;
+         // console.warn(`Could not parse date string: ${dateString}`);
+         return null;
+     }
 
-        // Filter data for the selected company
-        const companySpecificData = allCompanyData.filter(item => item.CompanyName === companyName && item.Date && item.StockPrice !== undefined);
+    function formatDateToYYYYMMDD(dateObject) {
+        if (!dateObject || isNaN(dateObject.getTime())) return null;
+         // Use UTC methods to format to avoid timezone shifts affecting the date part
+        const year = dateObject.getUTCFullYear();
+        const month = String(dateObject.getUTCMonth() + 1).padStart(2, '0');
+        const day = String(dateObject.getUTCDate()).padStart(2, '0');
+        return `${year}-${month}-${day}`;
+    }
 
-        // Sort data by date to ensure the line chart displays chronologically
-        companySpecificData.sort((a, b) => new Date(a.Date) - new Date(b.Date));
-
-        if (companySpecificData.length === 0) {
-            console.warn(`No data found for ${companyName} after filtering.`);
-            noDataMessageElement.textContent = `No valid stock data (Date, StockPrice) available for ${companyName}.`;
-            noDataMessageElement.style.display = 'block';
-            stockChartCanvas.style.display = 'none'; // Hide the canvas
-            if (currentChart) {
-                currentChart.destroy(); // Destroy any existing chart
-                currentChart = null;
+    // --- Feature: Sidebar Index Search Filter ---
+    function filterIndexList() {
+        // ... (remains the same)
+        if (!searchIndexInputElement) return;
+        const searchTerm = searchIndexInputElement.value.toLowerCase();
+        const listItems = companyListElement.getElementsByTagName('li');
+        for (let i = 0; i < listItems.length; i++) {
+            const linkElement = listItems[i].querySelector('a.nav-link');
+            if (linkElement) {
+                const indexName = linkElement.textContent.toLowerCase();
+                if (indexName.includes(searchTerm)) {
+                    listItems[i].style.display = '';
+                } else {
+                    listItems[i].style.display = 'none';
+                }
+            } else if (listItems[i].querySelector('span.nav-link.text-muted') || listItems[i].querySelector('span.nav-link.text-danger')) {
+                if (searchTerm === "") { listItems[i].style.display = ''; } else { listItems[i].style.display = 'none'; }
             }
-            return;
+        }
+    }
+    if (searchIndexInputElement) {
+        searchIndexInputElement.addEventListener('keyup', filterIndexList);
+    }
+
+
+    // --- Core Chart Display Function (Now handles metric selection and zoom) ---
+    /**
+     * Displays a chart for the selected index, considering date filters and selected metric.
+     * @param {string} indexNameParam - The name of the index.
+     */
+    function displayChartForCompany(indexNameParam) {
+        console.log(`Attempting to display chart for: ${indexNameParam}, Metric: ${currentSelectedMetric}`);
+        currentSelectedIndexName = indexNameParam; // Store current index
+        chartTitleElement.textContent = `Index Data for ${indexNameParam}`;
+
+        // 1. Get and filter data for the selected index & metric
+        const metricKey = currentSelectedMetric; // e.g., 'closing_index_value' or 'volume'
+        const unfilteredCompanySpecificData = allCompanyData.filter(item =>
+            item.index_name === indexNameParam &&
+            item.index_date &&
+            item[metricKey] !== undefined && // Check the selected metric column
+            !isNaN(parseFloat(item[metricKey])) && // Ensure metric value is a number
+            parseDMYtoDate(item.index_date) !== null // Ensure date is parseable
+        );
+
+        // 2. Display Available Date Range (using the same logic as before)
+        if (availableDateRangeInfoElement) {
+            if (unfilteredCompanySpecificData.length > 0) {
+                const sortedFullData = [...unfilteredCompanySpecificData].sort((a, b) => parseDMYtoDate(a.index_date) - parseDMYtoDate(b.index_date));
+                const minDateStr = sortedFullData[0].index_date;
+                const maxDateStr = sortedFullData[sortedFullData.length - 1].index_date;
+                availableDateRangeInfoElement.textContent = `Data available from: ${minDateStr} to ${maxDateStr}`;
+            } else {
+                 availableDateRangeInfoElement.textContent = 'No data available for this index.';
+            }
         }
 
-        // If data exists, hide the "no data" message and show the canvas
-        noDataMessageElement.style.display = 'none';
-        stockChartCanvas.style.display = 'block';
+        // 3. Apply Date Filters from UI Inputs
+        const startDateFilter = startDateInput.value ? new Date(startDateInput.value) : null;
+        const endDateFilter = endDateInput.value ? new Date(endDateInput.value) : null;
+        if (endDateFilter) { endDateFilter.setHours(23, 59, 59, 999); }
 
-        // Prepare data for Chart.js
-        const labels = companySpecificData.map(item => item.Date); // E.g., ['2023-01-01', '2023-01-02', ...]
-        const stockPrices = companySpecificData.map(item => item.StockPrice); // E.g., [150, 152, ...]
-        // const volumes = companySpecificData.map(item => item.Volume); // Optional: for a volume chart
+        let dateFilteredData = unfilteredCompanySpecificData.filter(item => {
+            const itemDate = parseDMYtoDate(item.index_date);
+            if (!itemDate) return false;
+            let pass = true;
+            if (startDateFilter && itemDate < startDateFilter) pass = false;
+            if (endDateFilter && itemDate > endDateFilter) pass = false;
+            return pass;
+        });
 
-        // Destroy the previous chart instance if it exists
+        // 4. Sort the final filtered data
+        dateFilteredData.sort((a, b) => parseDMYtoDate(a.index_date) - parseDMYtoDate(b.index_date));
+
+        // 5. Destroy previous chart
         if (currentChart) {
             currentChart.destroy();
+            currentChart = null;
         }
 
-        // Create a new chart
+        // 6. Handle case where no data remains after filtering
+        if (dateFilteredData.length === 0) {
+             console.warn(`No valid data found for ${indexNameParam} / ${metricKey} after filtering.`);
+             let message = `No valid '${metricKey.replace(/_/g,' ')}' data available for ${indexNameParam}`;
+             if (unfilteredCompanySpecificData.length > 0 && (startDateInput.value || endDateInput.value)) {
+                  message += ` within the selected date range.`;
+             }
+             noDataMessageElement.textContent = message;
+             noDataMessageElement.style.display = 'block';
+             if (stockChartCanvas) stockChartCanvas.style.display = 'none';
+             return;
+        }
+
+        noDataMessageElement.style.display = 'none';
+        if (stockChartCanvas) stockChartCanvas.style.display = 'block';
+
+        // 7. Prepare data and config based on selected metric
+        const labels = dateFilteredData.map(item => formatDateToYYYYMMDD(parseDMYtoDate(item.index_date)));
+        const dataValues = dateFilteredData.map(item => parseFloat(item[metricKey]));
+
+        let chartType = 'line';
+        let yAxisLabel = 'Value';
+        let beginYAtZero = false;
+        let datasetLabel = `${indexNameParam}`;
+        let backgroundColor = 'rgba(0, 123, 255, 0.1)';
+        let borderColor = 'rgba(0, 123, 255, 1)';
+
+        if (metricKey === 'closing_index_value') {
+            chartType = 'line';
+            yAxisLabel = 'Closing Index Value';
+            datasetLabel = `Closing Value (${indexNameParam})`;
+            beginYAtZero = false; // Usually better for price/index values
+        } else if (metricKey === 'volume') {
+            chartType = 'bar';
+            yAxisLabel = 'Volume';
+            datasetLabel = `Volume (${indexNameParam})`;
+            beginYAtZero = true; // Volume starts at 0
+             backgroundColor = 'rgba(40, 167, 69, 0.5)'; // Different color for volume bars
+             borderColor = 'rgba(40, 167, 69, 1)';
+        }
+        // Add more else if blocks here for other metrics if needed
+
+        // 8. Create new Chart.js instance with dynamic config and zoom plugin
         const ctx = stockChartCanvas.getContext('2d');
         currentChart = new Chart(ctx, {
-            type: 'line', // Type of chart (e.g., line, bar, pie)
+            type: chartType,
             data: {
-                labels: labels, // X-axis labels (Dates)
+                labels: labels,
                 datasets: [{
-                    label: `Stock Price (${companyName})`, // Legend label for this dataset
-                    data: stockPrices, // Y-axis data (Stock Prices)
-                    borderColor: 'rgba(0, 123, 255, 1)', // Line color
-                    backgroundColor: 'rgba(0, 123, 255, 0.1)', // Area fill color under the line
-                    tension: 0.1, // Makes the line slightly curved, 0 for straight lines
-                    fill: true // Fill area under the line
-                }
-                // { // Example for a second dataset (e.g., Volume)
-                //     label: `Volume (${companyName})`,
-                //     data: volumes,
-                //     borderColor: 'rgba(40, 167, 69, 1)',
-                //     backgroundColor: 'rgba(40, 167, 69, 0.1)',
-                //     yAxisID: 'yVolume', // Assign to a different Y axis if needed
-                //     type: 'bar' // Can be a different chart type
-                // }
-            ]
+                    label: datasetLabel,
+                    data: dataValues,
+                    borderColor: borderColor,
+                    backgroundColor: backgroundColor,
+                    tension: chartType === 'line' ? 0.1 : undefined, // Only for line
+                    fill: chartType === 'line' ? true : undefined,   // Only for line
+                    borderWidth: 1
+                }]
             },
             options: {
-                responsive: true, // Makes the chart responsive to container size
-                maintainAspectRatio: false, // Important for custom height via CSS
+                responsive: true,
+                maintainAspectRatio: false,
                 scales: {
                     x: {
-                        title: {
-                            display: true,
-                            text: 'Date'
-                        }
-                        // If dates are actual Date objects or parsable, Chart.js can use a time scale:
-                        // type: 'time',
-                        // time: {
-                        //     unit: 'day', // or 'month', 'year'
-                        //     tooltipFormat: 'll' // Luxon format for tooltips
-                        // }
+                        title: { display: true, text: 'Index Date' }
                     },
-                    y: { // Default Y-axis for stock prices
-                        title: {
-                            display: true,
-                            text: 'Stock Price ($)'
-                        },
-                        beginAtZero: false // Better for stock prices that don't start near zero
+                    y: {
+                        title: { display: true, text: yAxisLabel },
+                        beginAtZero: beginYAtZero
                     }
-                    // yVolume: { // Example for a secondary Y-axis for Volume
-                    //     type: 'linear',
-                    //     position: 'right',
-                    //     title: {
-                    //         display: true,
-                    //         text: 'Volume'
-                    //     },
-                    //     grid: {
-                    //         drawOnChartArea: false, // only want the grid lines for one axis to show up
-                    //     }
-                    // }
                 },
                 plugins: {
-                    legend: {
-                        position: 'top', // Display legend at the top
-                    },
-                    tooltip: {
-                        mode: 'index', // Show tooltips for all datasets at that x-index
-                        intersect: false, // Tooltip will appear even if not hovering directly over a point
+                    legend: { position: 'top' },
+                    tooltip: { mode: 'index', intersect: false },
+                    // Zoom Plugin Configuration
+                    zoom: {
+                        zoom: {
+                            wheel: { enabled: true }, // Enable zooming with mouse wheel
+                            pinch: { enabled: true }, // Enable zooming with pinch gesture
+                            mode: 'x', // Allow zooming only on the x-axis (time)
+                        },
+                        pan: {
+                            enabled: true, // Enable panning
+                            mode: 'x', // Allow panning only on the x-axis
+                        },
+                        limits: {
+                             x: { min: 'original', max: 'original' }, // Allow zooming out to original range
+                           // y: { min: 'original', max: 'original' } // Enable if y-axis zoom is desired
+                        }
                     }
                 }
             }
         });
-        console.log(`Chart displayed for: ${companyName}`);
+        console.log(`Chart.js ${chartType} chart displayed for: ${indexNameParam} / ${metricKey}`);
     }
 
     /**
-     * Populates the company list in the sidebar.
-     * @param {Array<Object>} parsedData - The array of company data objects from CSV.
+     * Populates the index list in the sidebar.
      */
     function displayCompanyList(parsedData) {
+        // ... (remains the same, no alphabetical sorting)
         if (!parsedData || parsedData.length === 0) {
-            companyListElement.innerHTML = `<li class="nav-item"><span class="nav-link text-muted">No company data to display.</span></li>`;
-            return;
+             companyListElement.innerHTML = `<li class="nav-item"><span class="nav-link text-muted">No data to display.</span></li>`; return;
         }
-        const companyNames = [...new Set(parsedData.map(item => item.CompanyName).filter(name => name))];
+        const companyNames = [...new Set(parsedData.map(item => item.index_name).filter(name => name && name.trim() !== ''))];
         if (companyNames.length === 0) {
-            companyListElement.innerHTML = `<li class="nav-item"><span class="nav-link text-muted">No unique company names found.</span></li>`;
-            return;
+            companyListElement.innerHTML = `<li class="nav-item"><span class="nav-link text-muted">No unique index names found.</span></li>`; return;
         }
-        companyListElement.innerHTML = ''; // Clear loading/error messages
-
+        companyListElement.innerHTML = '';
         companyNames.forEach(companyName => {
-            const listItem = document.createElement('li');
-            listItem.classList.add('nav-item');
-            const link = document.createElement('a');
-            link.classList.add('nav-link');
-            link.href = '#';
-            link.textContent = companyName;
-            link.setAttribute('data-company', companyName);
+             const listItem = document.createElement('li'); listItem.classList.add('nav-item');
+             const link = document.createElement('a'); link.classList.add('nav-link'); link.href = '#';
+             link.textContent = companyName; link.setAttribute('data-company', companyName);
+             link.addEventListener('click', (event) => {
+                 event.preventDefault();
+                 currentSelectedMetric = metricSelectElement.value; // Ensure metric is current when clicking index
+                 displayChartForCompany(companyName);
+                 document.querySelectorAll('#companyList .nav-link').forEach(navLink => navLink.classList.remove('active'));
+                 link.classList.add('active');
+             });
+             listItem.appendChild(link); companyListElement.appendChild(listItem);
+         });
+    }
 
-            link.addEventListener('click', (event) => {
-                event.preventDefault();
-                console.log(`Company clicked: ${companyName}`); // This log remains useful
-                displayChartForCompany(companyName); // Call the chart display function
+    // --- Event Listeners for Controls ---
 
-                document.querySelectorAll('#companyList .nav-link').forEach(navLink => {
-                    navLink.classList.remove('active');
-                });
-                link.classList.add('active');
-            });
-            listItem.appendChild(link);
-            companyListElement.appendChild(listItem);
+    // Apply Button (now also considers selected metric)
+    if (applyDateFilterBtn) {
+        applyDateFilterBtn.addEventListener('click', () => {
+            if (currentSelectedIndexName) {
+                 currentSelectedMetric = metricSelectElement.value; // Get latest metric selection
+                displayChartForCompany(currentSelectedIndexName);
+            } else {
+                alert("Please select an index first.");
+            }
         });
     }
 
-    /**
-     * Fetches and parses CSV data.
-     */
-    async function loadCompanyData() {
-        const csvFilePath = 'dump.csv';
-        try {
-            console.log(`Workspaceing CSV data from: ${csvFilePath}`);
-            const response = await fetch(csvFilePath);
-            if (!response.ok) {
-                console.error(`Error fetching CSV: ${response.status} ${response.statusText}`);
-                companyListElement.innerHTML = `<li class="nav-item"><span class="nav-link text-danger">Error loading company data. File not found or server error.</span></li>`;
-                chartTitleElement.textContent = 'Error Loading Data';
-                noDataMessageElement.textContent = 'Could not load company data file.';
-                noDataMessageElement.style.display = 'block';
-                stockChartCanvas.style.display = 'none';
-                return;
+    // Clear Button (clears dates, re-renders with current metric)
+    if (clearDateFilterBtn) {
+        clearDateFilterBtn.addEventListener('click', () => {
+            startDateInput.value = '';
+            endDateInput.value = '';
+            if (currentSelectedIndexName) {
+                 currentSelectedMetric = metricSelectElement.value; // Keep current metric
+                displayChartForCompany(currentSelectedIndexName);
             }
-            const csvText = await response.text();
-            console.log('CSV data fetched successfully.');
-
-            Papa.parse(csvText, {
-                header: true,
-                skipEmptyLines: true,
-                dynamicTyping: true,
-                complete: function(results) {
-                    console.log('PapaParse complete callback triggered.');
-                    if (results.data && results.data.length > 0) {
-                        allCompanyData = results.data;
-                        console.log('Stored Parsed CSV Data:', allCompanyData);
-                        displayCompanyList(allCompanyData);
-                        // Initially, no company is selected, so the chart area shows a prompt
-                        chartTitleElement.textContent = 'Select a Company to View Chart';
-                        noDataMessageElement.style.display = 'none'; // Hide if it was shown due to load error
-                        stockChartCanvas.style.display = 'block'; // Ensure canvas is visible for placeholder or first chart
-                         // Display a default message or placeholder on the canvas if no company is selected yet
-                        if(currentChart) currentChart.destroy(); // Clear any previous chart
-                        const ctx = stockChartCanvas.getContext('2d');
-                        // You could draw a placeholder message on the canvas itself or leave it blank
-                        // For now, the h1 title "Select a Company..." serves this purpose.
-
-                    } else {
-                        console.warn('No data found in CSV or CSV is empty after parsing.');
-                        companyListElement.innerHTML = `<li class="nav-item"><span class="nav-link text-muted">No data found in CSV file.</span></li>`;
-                        chartTitleElement.textContent = 'No Data Available';
-                        noDataMessageElement.textContent = 'The CSV file is empty or contains no usable data.';
-                        noDataMessageElement.style.display = 'block';
-                        stockChartCanvas.style.display = 'none';
-                    }
-                    if (results.errors && results.errors.length > 0) {
-                        console.error('Errors during CSV parsing:', results.errors);
-                    }
-                },
-                error: function(error) {
-                    console.error('PapaParse Error:', error.message);
-                    companyListElement.innerHTML = `<li class="nav-item"><span class="nav-link text-danger">Error parsing CSV data.</span></li>`;
-                    chartTitleElement.textContent = 'Error Parsing Data';
-                    noDataMessageElement.textContent = 'Could not parse the CSV data. Please check the file format.';
-                    noDataMessageElement.style.display = 'block';
-                    stockChartCanvas.style.display = 'none';
-                }
-            });
-        } catch (error) {
-            console.error('General error in loadCompanyData:', error);
-            companyListElement.innerHTML = `<li class="nav-item"><span class="nav-link text-danger">Could not load company data. Check console.</span></li>`;
-            chartTitleElement.textContent = 'Error';
-            noDataMessageElement.textContent = 'An unexpected error occurred while loading data.';
-            noDataMessageElement.style.display = 'block';
-            stockChartCanvas.style.display = 'none';
-        }
+        });
     }
 
-    // Call the function to load data
+    // Metric Select Dropdown
+     if (metricSelectElement) {
+        metricSelectElement.addEventListener('change', (event) => {
+            currentSelectedMetric = event.target.value;
+            if (currentSelectedIndexName) {
+                // Re-render the chart with the new metric for the current index and date range
+                displayChartForCompany(currentSelectedIndexName);
+            }
+             // Else: Just update the metric, it will be used when an index is next selected/filter applied
+        });
+    }
+
+     // Reset Zoom Button
+    if (resetZoomBtn) {
+        resetZoomBtn.addEventListener('click', () => {
+            if (currentChart && typeof currentChart.resetZoom === 'function') {
+                currentChart.resetZoom();
+            } else {
+                 console.log("No active chart or chart does not support resetZoom.");
+            }
+        });
+    }
+
+    // --- Data Loading ---
+    async function loadCompanyData() {
+        // ... (remains largely the same)
+         const csvFilePath = 'dump.csv';
+         try {
+             console.log(`Workspaceing CSV data from: ${csvFilePath}`);
+             const response = await fetch(csvFilePath);
+             if (!response.ok) { throw new Error(`HTTP error! status: ${response.status}`); }
+             const csvText = await response.text();
+             console.log('CSV data fetched successfully.');
+             Papa.parse(csvText, { /* ... options ... */
+                 header: true, skipEmptyLines: true, dynamicTyping: true,
+                 complete: function(results) {
+                     console.log('PapaParse complete callback triggered.');
+                     if (results.data && results.data.length > 0) {
+                         allCompanyData = results.data;
+                         displayCompanyList(allCompanyData);
+                         if (searchIndexInputElement) filterIndexList();
+                         chartTitleElement.textContent = 'Select an Index to View Chart';
+                         noDataMessageElement.style.display = 'none';
+                         if (stockChartCanvas) stockChartCanvas.style.display = 'block';
+                         if (availableDateRangeInfoElement) availableDateRangeInfoElement.textContent = '';
+                         if (currentChart) { currentChart.destroy(); currentChart = null; }
+                     } else { handleLoadError('No data found in CSV or CSV is empty after parsing.'); }
+                     if (results.errors && results.errors.length > 0) { console.error('Errors during CSV parsing:', results.errors); }
+                 },
+                 error: function(error) { console.error('PapaParse Error:', error.message); handleLoadError(`Error parsing CSV data: ${error.message}`); }
+             });
+         } catch (error) { console.error('General error in loadCompanyData:', error); handleLoadError(`Could not load company data: ${error.message}`); }
+     }
+
+     function handleLoadError(message) {
+         companyListElement.innerHTML = `<li class="nav-item"><span class="nav-link text-danger">${message}</span></li>`;
+         chartTitleElement.textContent = 'Error Loading Data';
+         noDataMessageElement.textContent = message;
+         noDataMessageElement.style.display = 'block';
+         if (stockChartCanvas) stockChartCanvas.style.display = 'none';
+         if (availableDateRangeInfoElement) availableDateRangeInfoElement.textContent = '';
+    }
+
     loadCompanyData();
 });
