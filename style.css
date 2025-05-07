@@ -1,0 +1,91 @@
+/* Custom styles will go here */
+body {
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    background-color: #f8f9fa; /* Light grey background for the page */
+}
+
+.navbar-brand {
+    font-weight: bold;
+}
+
+#sidebar {
+    position: sticky; /* Makes the sidebar stick during scroll */
+    top: 56px; /* Height of the navbar, adjust if your navbar height is different */
+    height: calc(100vh - 56px); /* Full viewport height minus navbar height */
+    overflow-y: auto; /* Allows scrolling within the sidebar if content overflows */
+    border-right: 1px solid #dee2e6; /* A subtle border to separate sidebar from main content */
+    background-color: #ffffff; /* White background for the sidebar */
+}
+
+#sidebar .sidebar-sticky {
+    padding-top: 1rem; /* Internal padding for the content within the sidebar */
+}
+
+#sidebar h5 {
+    padding: 0.5rem 1rem; /* Padding for the "Companies" heading */
+    color: #495057;
+    border-bottom: 1px solid #dee2e6;
+    margin-bottom: 0.5rem;
+}
+
+#companyList .nav-link {
+    font-weight: 500;
+    color: #007bff; /* Bootstrap primary blue */
+    cursor: pointer;
+    padding: 0.5rem 1rem;
+    border-radius: 0.25rem;
+    margin: 0.1rem 0.5rem; /* Small margin around links */
+    transition: background-color 0.2s ease-in-out, color 0.2s ease-in-out;
+}
+
+#companyList .nav-link:hover,
+#companyList .nav-link:focus {
+    background-color: #e9ecef; /* Light grey background on hover */
+    color: #0056b3; /* Darker blue on hover */
+    text-decoration: none;
+}
+
+#companyList .nav-link.active {
+    color: #ffffff;
+    background-color: #007bff;
+}
+
+#companyList .nav-link.text-muted { /* For loading/error messages in the list */
+    cursor: default;
+    color: #6c757d !important; /* Override link color */
+}
+#companyList .nav-link.text-muted:hover {
+    background-color: transparent; /* No hover effect for muted text */
+}
+
+
+.chart-container {
+    position: relative;
+    margin: auto;
+    height: 60vh; /* Viewport height for the chart, can be adjusted */
+    width: 100%;
+    background-color: #ffffff; /* White background for the chart area */
+    padding: 1.5rem;
+    border-radius: 0.3rem;
+    box-shadow: 0 0.125rem 0.25rem rgba(0,0,0,0.075); /* Subtle shadow for depth */
+}
+
+#chartTitle {
+    color: #343a40;
+}
+
+/* Responsive adjustments for smaller screens */
+@media (max-width: 767.98px) {
+    #sidebar {
+        position: static; /* Sidebar stacks on top */
+        height: auto;
+        max-height: 45vh; /* Limit height on small screens and allow scroll */
+        margin-bottom: 1.5rem;
+        border-right: none;
+        box-shadow: 0 0.125rem 0.25rem rgba(0,0,0,0.075);
+    }
+
+    .chart-container {
+        height: 50vh; /* Adjust chart height */
+    }
+}
