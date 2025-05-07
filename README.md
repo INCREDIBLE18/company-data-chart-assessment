@@ -34,15 +34,15 @@ Key functionalities include loading the data, displaying a searchable list of in
 *(Placeholder: Add screenshots of your application here!)*
 
 * *(Main interface: Sidebar list + Chart area)*
-![Main interface](screenshots\1.png)
+![alt text](screenshots/1.png)
 * *(Search filter in use)*
-![Search filter](screenshots\2.png)
+![alt text](screenshots/2.png)
 * *(Date range filter applied)*
-![Date range](screenshots\3.png)
+![alt text](screenshots/3.png)
 * *(Metric switched to Volume (Bar Chart))*
-![Metric switched](screenshots\4.png)
+![alt text](screenshots/4.png)
 * *(Zoomed-in chart)*
-![Zoomed-in](screenshots\5.png)
+![alt text](screenshots/5.png)
 
 
 ---
@@ -75,10 +75,10 @@ Key functionalities include loading the data, displaying a searchable list of in
     * **Option 1: Clone the Repository (if available)**
         Open your terminal and run:
         ```bash
-        git clone <your-repository-url.git>
-        cd <repository-folder-name>
+        git clone https://github.com/INCREDIBLE18/company-data-chart-assessment
+        cd company-data-chart-assessment
         ```
-        *(Replace `<your-repository-url.git>` and `<repository-folder-name>`)*
+
 
     * **Option 2: Download Files**
         Download `index.html`, `style.css`, `script.js`, and `dump.csv` into a new folder on your computer.
